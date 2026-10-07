@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TI0RC - Compact Repeater Map</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        
+        /* Custom Popup Styling - Very compact for data tables */
+        .leaflet-popup-content-wrapper {
+            border-radius: 0.375rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+            padding: 0;
+            overflow: hidden;
+        }
+        .leaflet-popup-content {
+            margin: 0 !important;
+            width: max-content !important;
+            min-width: 220px;
+        }
+        .leaflet-popup-tip-container {
+            margin-top: -1px;
+        }
+        .leaflet-popup-close-button {
+            color: #fff !important;
+            padding: 4px !important;
+        }
+
+        /* Tiny scrollbar for the tiny sidebar */
+        .tiny-scrollbar::-webkit-scrollbar {
+            width: 3px;
+        }
+        .tiny-scrollbar::-webkit-scrollbar-track {
+            background: #f8fafc; 
+        }
+        .tiny-scrollbar::-webkit-scrollbar-thumb {
+            background: #94a3b8; 
+            border-radius: 2px;
+        }
+
+        .tower-icon {
+            filter: drop-shadow(0px 2px 3px rgba(0,0,0,0.4));
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 relative">
+
+    <!-- Map Container -->
+    <div id="map" class="absolute inset-0 w-full h-full z-0"></div>
+
+    <!-- Floating Ultra-Compact Sidebar (Middle Left) -->
+    <aside class="absolute top-1/2 -translate-y-1/2 left-2 w-40 max-h-[85vh] bg-white/95 backdrop-blur shadow-lg rounded-md z-[1000] flex flex-col border border-slate-200 overflow-hidden">
+        
+        <!-- Tiny Header -->
+        <div class="p-1.5 bg-gradient-to-br from-blue-800 to-blue-950 text-white shrink-0 text-center">
+            <h1 class="text-[10px] font-bold leading-tight tracking-wide uppercase">TI0RC</h1>
+            <p class="text-[7px] text-blue-200 leading-tight uppercase tracking-wider mt-0.5">Costa Rica</p>
+        </div>
+        
+        <div id="tiny-list" class="flex-1 overflow-y-auto tiny-scrollbar p-1 space-y-0.5 bg-white/90">
+            <!-- List items injected via JS -->
+        </div>
+    </aside>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        const repeaterSites = [
+            {
+                name: "Alto Roble",
+                coords: [10.08, -84.05],
+                frequencies: [
+                    { freq: "145.240", offset: "-600", tone: "131.8", mode: "Analog" }
+                ]
+            },
+            {
+                name: "Cerro Azul",
+                coords: [9.98, -85.45],
+                frequencies: [
+                    { freq: "145.270", offset: "-600", tone: "131.8", mode: "Analog" }
+                ]
+            },
+            {
+                name: "San Carlos",
+                coords: [10.33, -84.43],
+                frequencies: [
+                    { freq: "145.300", offset: "-600", tone: "131.8", mode: "Analog" },
+                    { freq: "147.300", offset: "+600", tone: "131.8", mode: "Analog" },
+                    { freq: "439.850", offset: "N/A", tone: "CC1", mode: "DMR" }
+                ]
+            },
+            {
+                name: "Cerro Muerte",
+                coords: [9.56, -83.75],
+                frequencies: [
+                    { freq: "146.820", offset: "-600", tone: "131.8", mode: "Analog" },
+                    { freq: "439.875", offset: "N/A", tone: "CC1", mode: "DMR" },
+                    { freq: "439.900", offset: "-5000", tone: "131.8/C4FM", mode: "Fusion" }
+                ]
+            },
+            {
+                name: "Cerro Palmira",
+                coords: [10.21, -84.38],
+                frequencies: [
+                    { freq: "146.880", offset: "-600", tone: "131.8", mode: "Fusion/Analog" },
+                    { freq: "147.100", offset: "+600", tone: "131.8", mode: "Analog" },
+                    { freq: "439.550", offset: "-5000", tone: "131.8", mode: "Analog" }
+                ]
+            },
+            {
+                name: "Irazú Este",
+                coords: [9.98, -83.82],
+                frequencies: [
+                    { freq: "147.120", offset: "+600", tone: "131.8", mode: "Analog" }
+                ]
+            },
+            {
+                name: "Cerro Socola",
+                coords: [10.05, -84.15],
+                frequencies: [
+                    { freq: "147.150", offset: "+600", tone: "131.8", mode: "Analog" },
+                    { freq: "224.700", offset: "-1600", tone: "67.0", mode: "Analog" },
+                    { freq: "439.440", offset: "-5000", tone: "131.8/C4FM", mode: "Fusion" },
+                    { freq: "439.850", offset: "N/A", tone: "CC1", mode: "DMR" }
+                ]
+            }
+        ];
+
+        document.addEventListener("DOMContentLoaded", () => {
+            // Define strict bounding box for Costa Rica
+            const costaRicaBounds = L.latLngBounds(
+                [8.0, -86.5], // South West
+                [11.5, -82.0]  // North East
+            );
+
+            // Initialize Map restricted to Costa Rica
+            const map = L.map('map', {
+                zoomControl: false,
+                maxBounds: costaRicaBounds,
+                maxBoundsViscosity: 1.0, // Prevent dragging outside bounds entirely
+                minZoom: 8, // Prevent zooming out further than the country view
+                maxZoom: 18
+            }).setView([9.7489, -84.0], 8);
+
+            // Add zoom control to top-right
+            L.control.zoom({
+                position: 'topright'
+            }).addTo(map);
+
+            // Free ESRI World Street Map (No API Key required)
+            L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom, 2012'
+            }).addTo(map);
+
+            // Custom Radio Tower SVG (Matching user's reference image)
+            const towerSvg = `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="24" height="24" class="tower-icon">
+                    <!-- Base line -->
+                    <line x1="20" y1="90" x2="80" y2="90" stroke="#000" stroke-width="4" stroke-linecap="round"/>
+                    
+                    <!-- Main Frame (Trapezoid) -->
+                    <polygon points="35,90 65,90 55,40 45,40" fill="none" stroke="#000" stroke-width="4" stroke-linejoin="round"/>
+                    
+                    <!-- Horizontals -->
+                    <line x1="32" y1="73" x2="68" y2="73" stroke="#000" stroke-width="3"/>
+                    <line x1="40" y1="56" x2="60" y2="56" stroke="#000" stroke-width="3"/>
+                    
+                    <!-- X braces -->
+                    <line x1="35" y1="90" x2="68" y2="73" stroke="#000" stroke-width="3"/>
+                    <line x1="65" y1="90" x2="32" y2="73" stroke="#000" stroke-width="3"/>
+                    
+                    <line x1="32" y1="73" x2="60" y2="56" stroke="#000" stroke-width="3"/>
+                    <line x1="68" y1="73" x2="40" y2="56" stroke="#000" stroke-width="3"/>
+                    
+                    <line x1="40" y1="56" x2="55" y2="40" stroke="#000" stroke-width="3"/>
+                    <line x1="60" y1="56" x2="45" y2="40" stroke="#000" stroke-width="3"/>
+                    
+                    <!-- Stem & Bulb -->
+                    <line x1="50" y1="40" x2="50" y2="28" stroke="#000" stroke-width="4"/>
+                    <circle cx="50" cy="23" r="5" fill="none" stroke="#000" stroke-width="4"/>
+                    
+                    <!-- Radio Waves -->
+                    <path d="M 38 18 A 16 16 0 0 1 62 18" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round"/>
+                    <path d="M 30 9 A 28 28 0 0 1 70 9" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round"/>
+                </svg>
+            `;
+
+            const towerIcon = L.divIcon({
+                className: 'custom-div-icon',
+                html: towerSvg,
+                iconSize: [24, 24],
+                iconAnchor: [12, 24],
+                popupAnchor: [0, -20] 
+            });
+
+            const sidebarList = document.getElementById('tiny-list');
+
+            repeaterSites.forEach((site) => {
+                
+                let rowsHtml = '';
+                site.frequencies.forEach(f => {
+                    let modeColor = 'bg-slate-100 text-slate-600';
+                    if (f.mode.includes('DMR')) modeColor = 'bg-emerald-100 text-emerald-700';
+                    if (f.mode.includes('Fusion')) modeColor = 'bg-purple-100 text-purple-700';
+
+                    rowsHtml += `
+                        <tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                            <td class="py-1 px-2 font-mono font-bold text-slate-800">${f.freq}</td>
+                            <td class="py-1 px-2 text-[10px] text-slate-500">${f.offset}</td>
+                            <td class="py-1 px-2 text-[10px] text-slate-500">${f.tone}</td>
+                            <td class="py-1 px-2"><span class="text-[9px] px-1 py-0.5 rounded ${modeColor}">${f.mode}</span></td>
+                        </tr>
+                    `;
+                });
+
+                // Clean, table-based Popup
+                const popupHtml = `
+                    <div class="flex flex-col bg-white">
+                        <div class="bg-slate-800 text-white px-2 py-1 border-b border-slate-700 flex justify-between items-center">
+                            <h3 class="font-bold text-[12px] m-0 uppercase tracking-wide">${site.name}</h3>
+                        </div>
+                        <div class="p-0">
+                            <table class="w-full text-left border-collapse text-[11px]">
+                                <thead class="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th class="py-1 px-2 font-semibold text-slate-500">Freq</th>
+                                        <th class="py-1 px-2 font-semibold text-slate-500">Shift</th>
+                                        <th class="py-1 px-2 font-semibold text-slate-500">Tone/CC</th>
+                                        <th class="py-1 px-2 font-semibold text-slate-500">Mode</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${rowsHtml}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+
+                // Add Marker
+                const marker = L.marker(site.coords, { icon: towerIcon })
+                    .addTo(map)
+                    .bindPopup(popupHtml);
+                
+                // Add Tiny Sidebar List Item
+                const listItem = document.createElement('div');
+                listItem.className = "bg-white p-1 rounded border border-slate-100 hover:bg-blue-50 hover:border-blue-200 cursor-pointer transition-colors flex justify-between items-center";
+                listItem.innerHTML = `
+                    <div class="font-bold text-slate-700 text-[9px] uppercase tracking-wide">${site.name}</div>
+                    <div class="text-[8px] bg-slate-100 text-slate-500 px-1 rounded">${site.frequencies.length}</div>
+                `;
+
+                listItem.addEventListener('click', () => {
+                    map.flyTo(site.coords, 11, { duration: 1.0 });
+                    setTimeout(() => marker.openPopup(), 300);
+                });
+
+                sidebarList.appendChild(listItem);
+            });
+        });
+    </script>
+</body>
+</html>
